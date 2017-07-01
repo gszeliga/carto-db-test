@@ -1,3 +1,5 @@
 yellow_tripdata_2016-01.csv
 target
 .lein-repl-history
+*.swp
+.nrepl-port
