@@ -30,22 +30,32 @@
       [s c])))
 
 (defn extract-field-fn [fname channel]
-  (let [headers (<!! channel)
-        fidx (->> (split headers  #",") (map-indexed vector) (filter (fn [[_ v]] (= v fname))) first first)]
-    #(java.lang.Double/parseDouble (nth (split % #",") fidx))))
+  (let [headers   (<!! channel)
+        field-idx (->> (split headers  #",") 
+                       (map-indexed vector) 
+                       (filter (fn [[_ v]] (= v fname))) 
+                       first 
+                       first)]
+    #(java.lang.Double/parseDouble (nth (split % #",") field-idx))))
 
 (defn aggregate-field [fname channel npar]
-  (let [as-value-fn (extract-field-fn fname channel)
-        fvchan (pipe channel (chan 1024 (map as-value-fn)))
-        aggregators (for [_ (range npar)]
-                      (w-aggregate fvchan))]
+  (let [as-value-fn       (extract-field-fn fname channel)
+        fvalue-chan       (pipe channel (chan 1024 (map as-value-fn)))
+        fvalue-aggregator (for [_ (range npar)]
+                            (w-aggregate fvalue-chan))]
     (go
-      (let [[s c] (<! (async/reduce #(apply map + [%1 %2]) [0.0 0] (async/merge aggregators)))]
-        (/ s c)))))
+      (let [[sum count] (<! (async/reduce 
+                             #(apply map + [%1 %2]) 
+                             [0.0 0] 
+                             (async/merge fvalue-aggregator)))]
+        (/ sum count)))))
 
 (defn process! [path fname npar]
-  (let [lines (mult (stream-lines-from path))
+  (let [lines         (mult (stream-lines-from path))
         aggregate-tap (tap lines (chan 1024))
-        count-tap (tap lines (chan 1024))]
-    (<!! (async/reduce (fn [_ v] (println v)) "" (async/merge [(aggregate-field fname aggregate-tap npar)
-                                                               (count-lines count-tap npar)])))))
+        count-tap     (tap lines (chan 1024))]
+    (<!! (async/reduce 
+          (fn [_ v] (println v)) 
+          "" 
+          (async/merge [(aggregate-field fname aggregate-tap npar)
+                        (count-lines count-tap npar)])))))
